@@ -1,0 +1,7 @@
+{
+  "name": "drunken-frenchman",
+  "version": "1.0.0",
+  "description": "Pass-and-play Drunken Frenchman card game (local, zero dependencies)",
+  "scripts": { "start": "node server.js", "test": "node test/engine.test.js && node test/fuzz.test.js && node test/bot.test.js" },
+  "license": "MIT"
+}
