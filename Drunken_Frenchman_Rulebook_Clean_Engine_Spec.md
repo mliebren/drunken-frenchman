@@ -849,10 +849,10 @@ Expected: stored terminal score is not incremented twice; calculation is pure or
 **DF-MATCH-01 — Single game.**  
 Expected: compare game scores; no match target.
 
-**DF-MATCH-02 — Below target.** Both totals below 200.  
+**DF-MATCH-02 — Below target.** Both totals below 1000.  
 Expected: another game begins.
 
-**DF-MATCH-03 — One reaches target.** P1 reaches 200 after a game.  
+**DF-MATCH-03 — One reaches target.** P1 reaches 1000 after a game.  
 Expected: P1 wins match.
 
 **DF-MATCH-04 — Both reach target same game.** P1 higher cumulative.  
