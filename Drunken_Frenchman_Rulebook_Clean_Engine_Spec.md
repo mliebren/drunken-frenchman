@@ -1,56 +1,52 @@
 # Drunken Frenchman — Formal Game-Engine Specification
-
 **Version 1.0 | Rules resolved for deterministic implementation**
 
 This document is the single authoritative specification for *Drunken Frenchman*: player-facing rules, implementation model, state machine, data model, resolution algorithms, scoring, and acceptance tests. Where the prior rules or clarifications left implementation choices open, this specification adopts explicit defaults so that two implementations produce the same result.
 
-\---
+---
 
-## 1\. Game overview
+## 1. Game overview
 
-* Players: exactly two.
-* Deck: standard 52 cards plus two jokers (54).
-* Deal: 13 cards to each player; 28 remain in the draw pile.
-* Objective: create and extend sets and runs, exploit special-card actions, and end the game with the higher score.
-* A completed game is scored once. A player who successfully ends the game by going out receives +20.
-* Match mode may be single-game or cumulative (Section 17).
+- Players: exactly two.
+- Deck: standard 52 cards plus two jokers (54).
+- Deal: 13 cards to each player; 28 remain in the draw pile.
+- Objective: create and extend sets and runs, exploit special-card actions, and end the game with the higher score.
+- A completed game is scored once. A player who successfully ends the game by going out receives +20.
+- Match mode may be single-game or cumulative (Section 17).
 
-## 2\. Normative terminology
+## 2. Normative terminology
 
 The terms **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 
-* **Physical card / physical identity:** the actual card instance, uniquely identified (e.g. `8C`, `JH`, `Joker-1`).
-* **Logical identity:** the rank/suit identity a card represents in a group (e.g. `JH`). Logical identity is used for group validation and card scoring where specified.
-* **Group:** one set or run with stable group ID and ordered membership.
-* **Ownership:** which player receives the score for a physical card. Ownership is per-card, not necessarily group-wide.
-* **Special-active card:** a 2 or 8 whose special ability has not been consumed.
-* **Exhausted:** a special card removed permanently from gameplay after its special ability is activated.
-* **Turn:** the ordinary turn cycle of draw, mandatory plays, discard.
-* **Action window:** a response opportunity for a special-card action outside normal turn flow.
-* **Table:** all groups in play.
-* **Discard pile:** face-up stack/array, bottom-to-top; never reshuffled.
-* **Draw pile:** face-down stack; draw from top.
-* **Hand:** cards privately held by a player.
+- **Physical card / physical identity:** the actual card instance, uniquely identified (e.g. `8C`, `JH`, `Joker-1`).
+- **Logical identity:** the rank/suit identity a card represents in a group (e.g. `JH`). Logical identity is used for group validation and card scoring where specified.
+- **Group:** one set or run with stable group ID and ordered membership.
+- **Ownership:** which player receives the score for a physical card. Ownership is per-card, not necessarily group-wide.
+- **Special-active card:** a 2 or 8 whose special ability has not been consumed.
+- **Exhausted:** a special card removed permanently from gameplay after its special ability is activated.
+- **Turn:** the ordinary turn cycle of draw, mandatory plays, discard.
+- **Action window:** a response opportunity for a special-card action outside normal turn flow.
+- **Table:** all groups in play.
+- **Discard pile:** face-up stack/array, bottom-to-top; never reshuffled.
+- **Draw pile:** face-down stack; draw from top.
+- **Hand:** cards privately held by a player.
 
-## 3\. Card and zone data model
+## 3. Card and zone data model
 
 Every card instance stores:
-
-* `id`: unique stable physical identifier.
-* `physical`: rank/suit or Joker.
-* `zone`: hand, draw-pile, discard-pile, group, exhausted, betting-pool, or transient.
-* `owner`: player ID or null (for cards in draw/discard/exhausted zones unless explicitly owned).
-* `logicalIdentity`: null while ungrouped; rank/suit identity while in a group. Jokers and substitute 8s require this.
-* `specialStatus`: `available`, `consumed`, or `not\_applicable`.
-* `groupId` and `groupPosition` when in a group.
+- `id`: unique stable physical identifier.
+- `physical`: rank/suit or Joker.
+- `zone`: hand, draw-pile, discard-pile, group, exhausted, betting-pool, or transient.
+- `owner`: player ID or null (for cards in draw/discard/exhausted zones unless explicitly owned).
+- `logicalIdentity`: null while ungrouped; rank/suit identity while in a group. Jokers and substitute 8s require this.
+- `specialStatus`: `available`, `consumed`, or `not_applicable`.
+- `groupId` and `groupPosition` when in a group.
 
 Group record:
-
-* `id`, `type` (`set` or `run`), ordered `members` (card IDs), `ownerSide` (which side/group location the group currently resides on for red-2 transfer), and metadata.
-* Group ownership/side and individual scoring ownership are separate. A group may have cards scored by both players.
+- `id`, `type` (`set` or `run`), ordered `members` (card IDs), `ownerSide` (which side/group location the group currently resides on for red-2 transfer), and metadata.
+- Group ownership/side and individual scoring ownership are separate. A group may have cards scored by both players.
 
 ### Zones
-
 1. Player 1 hand
 2. Player 2 hand
 3. Draw pile (top is first card drawn)
@@ -62,7 +58,7 @@ Group record:
 
 A card MUST be in exactly one zone. A card in a group MUST belong to exactly one group. Group transfer changes group side/location, not individual scoring ownership, unless an action explicitly changes ownership.
 
-## 4\. Setup and redeal
+## 4. Setup and redeal
 
 1. Shuffle all 54 card instances.
 2. Deal 13 to each player.
@@ -73,7 +69,7 @@ A card MUST be in exactly one zone. A card in a group MUST belong to exactly one
 
 A joker qualifies for Hand of Crap. A 2 or 8 qualifies regardless of suit. A card's special ability need not be used to qualify.
 
-## 5\. Opening bet and selection
+## 5. Opening bet and selection
 
 1. Reveal the top draw-pile card into the temporary pool (without permanently consuming it yet).
 2. Each player selects one hand card as a bet; remove each bet card from the hand.
@@ -85,10 +81,9 @@ A joker qualifies for Hand of Crap. A 2 or 8 qualifies regardless of suit. A car
 8. The losing bet is not returned to its bettor. Unselected bets are bottomed as described. The selected bet card is taken by winner as a transfer from the pool.
 9. The winner starts the first ordinary turn. No group is created during the betting selection.
 
-## 6\. Turn and mandatory-play loop
+## 6. Turn and mandatory-play loop
 
 An ordinary turn MUST follow this sequence:
-
 1. Draw/selection (Section 7).
 2. Mandatory-play loop (Section 8).
 3. Optional special actions in any permitted action window (Section 9); special 2s may be played outside turn.
@@ -99,142 +94,181 @@ A player cannot voluntarily end the mandatory-play loop while a mandatory play e
 **Mandatory play is an ordinary play only**: cards are placed as ordinary cards to form or extend legal sets/runs. This rule does not require activation of special abilities, 8 substitutions, red-2 group theft, or black-2 draw/counter. A 2 or 8 may be played as an ordinary card if it forms a legal group and its special ability is not activated.
 
 ### Legal ordinary placements
+- Form a new set or run from at least three cards, using cards from the player's hand.
+- Add a hand card to an existing group on either player's side, if it fits the group's logical structure.
+- Mandatory plays must include all available ordinary legal placements from the player's hand, one at a time, until no legal ordinary placement remains. The player's choice among alternatives is legal.
 
-* Form a new set or run from at least three cards, using cards from the player's hand.
-* Add a hand card to an existing group on either player's side, if it fits the group's logical structure.
-* Mandatory plays must include all available ordinary legal placements from the player's hand, one at a time, until no legal ordinary placement remains. The player's choice among alternatives is legal.
-
-## 7\. Drawing and discard-pile access
+## 7. Drawing and discard-pile access
 
 ### 7.1 Draw-pile draw
-
 Draw the top card of the draw pile. If empty, use the fallback source sequence in Section 15.
 
 ### 7.2 Top-discard draw
-
 Take the top discard card into hand. This is a normal draw. The card may be retained in hand and is not required to be played, even if it is playable.
 
 ### 7.3 Indexed discard pickup
-
 Choose any discard-pile index `i` (bottom-to-top), take that card and every card above it, and place all taken cards in hand. The selected card (the card at index `i`) MUST be legally placed during the same turn. If it cannot legally be placed, this pickup is illegal and must be undone. Cards above the selected card are free to retain or play. This action counts as the player's normal draw.
-
-* A top discard chosen via indexed pickup is still subject to this indexed-pickup requirement; the more permissive top-discard-retain rule applies only to the separate top-discard draw option.
-* Special cards may be picked up; only an ability previously consumed is no longer available.
+- A top discard chosen via indexed pickup is still subject to this indexed-pickup requirement; the more permissive top-discard-retain rule applies only to the separate top-discard draw option.
+- Special cards may be picked up; only an ability previously consumed is no longer available.
 
 The discard pile may become empty and is never reshuffled.
 
-## 8\. Groups, sets, runs, and mandatory-play validation
+## 8. Groups, sets, runs, and mandatory-play validation
 
 ### 8.1 Sets
-
 A set contains 3 or 4 physical cards whose logical identities share the same rank, with no duplicate logical identities. Logical identity must be unique by suit within the set. A set cannot exceed four members. A set of three is complete/legal; a joker may occupy a missing fourth identity. If a set is already four cards, no card can be added.
 
 ### 8.2 Runs
-
 A run contains 3–13 cards of one logical suit, in consecutive rank order, Ace high only. A run cannot wrap (Q-K-A is valid; K-A-2 is not). No duplicate logical identities within a run. Runs are kept in their logical order. A substitute retains the substituted member's logical identity and position.
 
 ### 8.3 Creating a group
-
 A new group requires at least three cards at creation. A player may use a joker with chosen logical identity to satisfy a set/run. Each physical card in the group is owned for scoring by the player who played it. The group's side is initially the creator's side.
 
 ### 8.4 Extending groups
-
 Cards may be added to either player's table group. Added cards are owned for scoring by the player who added them. Group side does not determine card scoring owner. Groups persist and do not break apart; cards may leave a group only through an 8 substitution. Group members remain in their structure/positions after substitution.
 
 ### 8.5 Joker identity and validation
+- A joker's logical identity is selected when placed and is fixed until an 8 substitutes it.
+- Opponents may extend a group but cannot change joker identity.
+- Jokers may be used multiple times in one group only if each joker's logical identity is distinct and group constraints remain satisfied.
+- Joker logical identity cannot duplicate a logical identity in the same set/run. A duplicate identity may exist elsewhere on the table only in the opposite group type (set vs run), as allowed by the game's group-specific uniqueness rule.
+- In a set of three, a joker may represent the missing fourth identity without a physical fourth card being present. This is treated as three physical members and not as a phantom fourth physical card. A set may be extended only up to four physical members; no fifth member.
+- In a set of four, all four physical members are accounted for; no additional card may be added.
+- Joker may represent a 2 or 8 rank identity, but not special powers.
+- A joker stolen/transferred as a group member retains its logical identity.
+- An 8 may substitute a joker; the 8 assumes the joker's logical identity in the former slot. The removed joker may then be placed into any legal new group with a newly chosen identity.
 
-* A joker's logical identity is selected when placed and is fixed until an 8 substitutes it.
-* Opponents may extend a group but cannot change joker identity.
-* Jokers may be used multiple times in one group only if each joker's logical identity is distinct and group constraints remain satisfied.
-* Joker logical identity cannot duplicate a logical identity in the same set/run. A duplicate identity may exist elsewhere on the table only in the opposite group type (set vs run), as allowed by the game's group-specific uniqueness rule.
-* In a set of three, a joker may represent the missing fourth identity without a physical fourth card being present. This is treated as three physical members and not as a phantom fourth physical card. A set may be extended only up to four physical members; no fifth member.
-* In a set of four, all four physical members are accounted for; no additional card may be added.
-* Joker may represent a 2 or 8 rank identity, but not special powers.
-* A joker stolen/transferred as a group member retains its logical identity.
-* An 8 may substitute a joker; the 8 assumes the joker's logical identity in the former slot. The removed joker may then be placed into any legal new group with a newly chosen identity.
+## 9. Special cards — common rules
 
-## 9\. Special cards and action windows
+### Rule SP-01 — Special-card eligibility
+A special action can be activated only by a physical 2 or 8 in the acting player's hand whose ability status is `available`. A card in a group, draw pile, or discard pile cannot activate an ability, except the explicit discard-pile substitution procedure for an 8 (Rule 8-SUB-09).
 
-Special actions are optional. Playing a 2 or 8 as an ordinary group card does not consume its special ability. An ability is consumed permanently upon activation.
+### Rule SP-02 — Activation is optional
+Special abilities are optional and do not count as ordinary mandatory placements. A 2 or 8 may instead be placed as an ordinary card when it legally fits a group. Ordinary placement does not consume its special ability.
 
-### 9.1 Red 2 (Hearts or Diamonds): steal group
+### Rule SP-03 — Atomic validation
+Before an action commits, the engine validates the card, target, timing, resulting group/table state, and required immediate placements. If any validation fails, the action is rejected, the state is unchanged, and the special ability remains available. Once a valid action commits, the activating card is exhausted immediately and cannot be recovered or reused.
 
-When a player activates a red 2:
+### Rule SP-04 — Exhausted-card zone
+An activated special card is moved to the visible exhausted pile, not left in the hand, group, or discard pile. It is permanently unavailable and scores zero. In an 8 substitution, the physical 8 remains in its target group slot as a substitute and its ability is marked consumed; it is not moved to the exhausted pile until that substitute is itself removed by a later 8. (See Rule 8-SUB-05.)
 
-1. Validate that the player has a special-active red 2 and a target group on the opponent's table side.
-2. Exhaust the red 2 immediately.
-3. Move the selected entire group to the activating player's table side. Group members' individual scoring ownership does not change.
-4. A group affected by red 2 is not itself disassembled. If a target merges with a compatible group on the receiving side, merge only when the merged membership is structurally legal and unambiguous (same type, compatible identities, no duplicate member, and no resulting violation); otherwise keep groups distinct. Merge is optional for the receiver and must be declared at the action.
-5. Red 2 action is sequential, not simultaneous. Each red 2 must target a different group from the immediately preceding red-2 target in that chain, unless the prior target was merged: in that case, target the merged group as one current group. A later red 2 may target a group affected by an earlier action if it exists as a distinct current group.
-6. A red-2 action opens a counter window before the action is finalized.
+### Rule SP-05 — Action timing
+Special actions may be initiated only during a legal action window: during the active player's turn after the draw and before the turn-ending discard, during a specifically opened response window, or during the going-out response window. A special action cannot interrupt an atomic ordinary placement or another action's resolution.
 
-### 9.2 Black 2: counter or draw seven
+### Rule SP-06 — Priority and window closure
+When an action opens a response window, the opponent of the action's actor has first response priority. If that opponent declines or has no legal response, the window closes and the action stands. A window cannot be reopened after it closes.
 
-Black 2 special ability can be activated in either mode, selected at activation.
+## 9.1 Red 2 — group transfer
 
-**Counter mode**
+### Rule R2-01 — Eligible red 2
+Hearts 2 or Diamonds 2 in the player's hand may activate the red-2 group-transfer ability, if available.
 
-* A counter may only be played in an open red-2 response chain and counters the most recent unresolved red-2 action.
-* Countering restores the affected group to the side it occupied immediately before that red-2 action, and reverses any merge created solely by that red-2 action. If later actions have modified the affected group, those later modifications remain with the group as it is restored; no card is rolled back beyond the targeted red-2 transfer/merge.
-* The black 2 is exhausted immediately.
-* Counters alternate players: the player who just played a red 2 may not counter their own red-2 action. A counter is only available to the opponent of the actor of the latest red-2 action.
-* If no counter is played during its response window, that red-2 action stands. The chain window closes and ordinary play continues.
-* If a new red 2 is activated as a response before the window closes, it becomes the most recent action and opens its own counter window; resolve actions sequentially (LIFO counter targeting).
-* A black 2 may counter only one red-2 action.
+### Rule R2-02 — Target requirement
+Target one intact group currently located on the opponent's table side. A red 2 cannot target a group on the activating player's side, a group in the discard pile, or an exhausted/removed group. Group cards remain intact; red 2 does not remove individual members.
 
-**Draw-seven mode**
+### Rule R2-03 — Commit transfer
+On valid activation, exhaust the red 2 and move the target group as a whole to the activating player's table side. Card-level scoring ownership of every member remains unchanged. Group-side location is not card scoring ownership.
 
-* Exhaust the black 2 immediately, then make the opponent draw up to seven cards, using Section 15 source order. If fewer than seven cards are available across all permitted sources, the game ends in a tie and scores immediately.
-* Draw-seven does not itself create a red-2 counter window.
+### Rule R2-04 — Merge is not automatic
+A transferred group does not automatically merge with another group. Groups remain separate, even if compatible. This prevents transfer from changing member identities, positions, or rollback boundaries. Players may continue to extend either group individually under ordinary placement rules.
 
-**Two consecutive black 2s**
+### Rule R2-05 — Counter window
+After the transfer commits, open a counter window for the opponent of the red-2 actor. Only a black 2 in counter mode is a legal response in this window. No 8 substitution, ordinary placement, or draw-seven black-2 mode may be used as a counter response. The target group remains transferred while the window is open.
 
-* Two black 2s by the same player in sequence are allowed only if the first action is draw-seven and the second is draw-seven, or if a legal chain response permits the second (counter) after an intervening red-2 action. No player may counter their own red 2.
+### Rule R2-06 — Red 2 response chain
+A red 2 cannot be played as a response to a red 2. Red-2 actions are not simultaneous and do not form a multi-red stack. The only response to an open red-2 counter window is a legal black-2 counter; otherwise the window closes. This resolves chain timing as alternating red-2 actions and black-2 counters rather than overlapping unresolved transfers.
 
-### 9.3 Timing and windows
+### Rule R2-07 — Counter resolution
+If the eligible opponent activates a black 2 in counter mode during the open window, validate the counter, exhaust the black 2, and immediately return the target group to the side it occupied immediately before the red-2 transfer. The counter reverses only that transfer; it does not reverse card plays, scoring ownership, or unrelated state changes. No unrelated changes are permitted during this window, so rollback is unambiguous. The red 2 remains exhausted.
 
-* Special 2s may be played outside a player's ordinary turn, provided the action's timing and target are legal.
-* An open red-2 response window is the only window for counter mode.
-* Red-2 chains are sequential; no simultaneous red-2 actions.
-* Each special 2 is exhausted immediately, even if the action is countered.
-* Red/black special actions cannot occur after a finalized game-ending state. The going-out black-2 window is a specific exception: a black 2 draw-seven action may be played there to continue the game (Section 10).
-* If an unresolved red-2 response chain has no eligible red or black 2 responses remaining, the most recent red-2 action stands and the chain closes.
+### Rule R2-08 — Red-2 finalization
+If no counter is activated, close the response window. The group remains on the receiving side. The action is finalized and cannot be countered later.
 
-## 10\. Eight substitution
+### Rule R2-09 — Red 2 availability
+A red 2 may not be activated if the opponent has no target group. An invalid activation does not consume or exhaust the card.
 
-A special-active 8 may substitute one card from either (a) any table group on the activating player's side or opponent's side, or (b) any card at any index in the discard pile.
+## 9.2 Black 2 — counter or draw seven
 
-### 10.1 Table substitution
+### Rule B2-01 — Black 2 modes
+Clubs 2 or Spades 2 in hand with ability available may be activated in exactly one mode: (a) counter a red-2 transfer in its response window, or (b) force the opponent to draw seven cards. The mode is declared before validation/resolution and cannot be changed once the action commits.
 
-1. Select the target card from a group.
-2. Determine its logical identity and position.
-3. Validate the removed card can be immediately and legally played elsewhere, except the set-of-three-to-set-of-four exception below.
-4. Exhaust the 8.
-5. Replace the target card in its exact group position with the physical 8; the 8 adopts the target's logical identity and position and is scored as a substitute-8 (zero points).
-6. Place the removed physical card immediately into a legal group, with ownership assigned to the player performing the placement. It may be placed on either player's group or in a newly created group. If no legal immediate placement exists, the substitution is invalid and must not occur.
-7. Exception: a card removed from a set of three may be returned to that same set if the result is a set of four (the removed card fills the fourth distinct logical identity). This exception does not apply to runs or sets already containing four physical members.
-8. Substitution does not break or reorder groups. A run remains ordered; the 8 represents the removed logical identity in its slot.
+### Rule B2-02 — Counter eligibility
+Counter mode is available only during a response window opened by a red 2. The counter player must be the opponent of the red-2 actor. A player cannot counter their own red 2. Counter mode has no effect outside that window.
 
-### 10.2 Discard-pile substitution
+### Rule B2-03 — Counter effect
+A valid counter exhausts the black 2 and reverses the latest red-2 transfer as defined in Rules R2-07 and R2-08. A black 2 counters exactly one transfer.
 
-1. Select any discard-pile index, including the top or bottom.
-2. The selected card must be immediately legally placed into a group. Validate placement before committing.
-3. Exhaust the 8.
-4. Remove selected card from discard pile and immediately place it into a legal group, assigning ownership to the 8 player.
-5. Place the physical 8 into the discard pile at the exact index from which the selected card was removed (maintaining the pile's order).
-6. The 8 in the discard pile is exhausted and is treated as an ordinary physical 8 when subsequently drawn: it has no special ability and is worth -5 if retained in hand, or +5 if played ordinarily to a group (its ordinary physical value).
-7. If the selected card cannot be legally placed, the substitution is invalid and neither card moves.
+### Rule B2-04 — Draw-seven effect
+When draw-seven mode is activated, exhaust the black 2 and the opponent must draw seven cards. Use the draw-source priority defined in Rule DR-01. If fewer than seven cards can be obtained, the game ends in a tie immediately; do not partially resume play.
 
-### 10.3 Special-8 usage
+### Rule B2-05 — Draw-seven is not a counter
+Draw-seven mode does not reverse, cancel, or alter any red-2 transfer and cannot be declared during a red-2 counter window. A counter response must be declared as counter mode.
 
-* Each special-active 8 can perform one substitution and is exhausted immediately.
-* Consecutive 8 substitutions are allowed if each is independently legal and uses a different special-active 8.
-* An 8 may replace a card whose physical card is an 8 (including ordinary-played or substitute-8) or joker, provided the target card is in a group and the resulting identities/structure remain legal.
-* An 8 may replace a card in a group affected by a red-2 action only after that red-2 action has resolved (response window closed).
-* An 8 substitute is not a second logical member: it represents the target's identity in the same position. It is scored 0, not the value of the target identity; the removed card retains its own physical scoring value and receives ownership based on its new placement.
-* A substitute 8 cannot be duplicated in identity within the same group under the group's validation rules.
+### Rule B2-06 — Multiple black 2 activations
+A player may activate multiple black 2s in succession only when each activation has a separately legal timing window. During an ordinary turn, a draw-seven may be followed by another draw-seven if another black 2 remains available and the action window is still open. A counter cannot follow draw-seven unless a new red-2 response window is subsequently opened. A player cannot counter their own red 2.
 
-## 11\. Mandatory-play versus discard and going out
+### Rule B2-07 — Black 2 window closure
+After a draw-seven action fully resolves, close its action window and continue the game at the defined active-player point. A draw-seven action does not create a new response window.
+
+## 9.3 Eight — substitution
+
+### Rule 8-SUB-01 — Eligible 8
+An 8 in the player's hand with special ability available may activate substitution. The target may be a card in either player's table group, or an eligible discard-pile card as described below.
+
+### Rule 8-SUB-02 — Target identity and slot
+When targeting a table card, record its physical identity, logical identity, group ID, group type, and exact position. The 8 will represent the target's logical identity in that slot.
+
+### Rule 8-SUB-03 — Removed-card placement requirement
+Except for the set-three-to-set-four exception in Rule 8-SUB-07, the removed physical card must be immediately placed into a different legal group or a newly created legal group. The removed card may be placed on either player's table side. The player activating the 8 receives scoring ownership for the card they re-place. The removed card cannot be retained in hand or discarded as part of the substitution.
+
+### Rule 8-SUB-04 — Validate before commit
+Before any card moves, validate the 8's target and the removed card's immediate destination, including all logical-identity and group-size constraints. If no legal destination exists, reject the entire substitution. No card changes zone, ownership, position, or special status.
+
+### Rule 8-SUB-05 — Commit substitution
+When a valid substitution commits, the physical 8 replaces the target in its exact group slot and adopts its logical identity. The target card is removed and immediately placed at the validated destination. The physical 8 is marked as a `substitute_8` and scores zero while it occupies that group slot. It has no remaining special ability while in that slot. If an 8 substitute is later replaced by another special 8, the old substitute-8 is removed from the group and placed in the visible exhausted pile; the newly activated 8 takes its slot.
+
+### Rule 8-SUB-06 — Run position preservation
+Substitution never reorders a run. The substitute 8 represents the target's logical identity in the exact position formerly occupied by the target.
+
+### Rule 8-SUB-07 — Set-of-three exception
+If the target card is removed from a set containing exactly three physical members, the removed card may be returned to that same set only if it legally fills the fourth distinct rank identity and the resulting set has four physical members. The 8 occupies the original target slot and represents the removed card's identity. This exception is not available for runs or four-card sets. Validate both the identity and four-card limit before commit.
+
+### Rule 8-SUB-08 — Table target eligibility
+A table target may be any member of either player's group, including an ordinary-played 8 or a substitute 8, or a joker. The target's logical identity is substituted, not its special power. An 8 cannot remove a card from a group whose red-2 transfer counter window is still open. After that window closes, the group is eligible.
+
+### Rule 8-SUB-09 — Discard-pile target
+An active special 8 may target any card index in the discard pile. The selected discard card must be immediately legally placed in a group. Validate before commit. On commit, place the selected card in a legal group, assigning scoring ownership to the activating player; insert the physical 8 at the exact index vacated by the selected card. The 8 placed in the discard pile is consumed/exhausted and has no substitution ability if subsequently drawn. Relative order of all other discard cards is preserved.
+
+### Rule 8-SUB-10 — Consecutive substitutions
+Consecutive substitutions are permitted only as distinct actions, each using a different special-active 8 and each passing complete validation. A player cannot reuse the same 8 or perform a second substitution with a substitute 8.
+
+### Rule 8-SUB-11 — Logical identity validation
+The substitute 8 cannot introduce a duplicate logical identity or otherwise invalidate the group. The removed card's new group must also be valid. If either structure is invalid, reject the action before commit.
+
+### Rule 8-SUB-12 — Scoring
+A substitute 8 in a group scores zero. The removed card, once placed in its new group, scores according to its new logical/physical identity and the ownership assigned by its new placement. Each physical card is scored at most once.
+
+## 9.4 Special-card interactions and prohibited overlaps
+
+### Rule SP-INT-01 — No overlapping resolutions
+An engine action must finish or be countered before a new action is initiated. Red-2 transfer counter windows are exclusive. No ordinary placement, 8 substitution, or draw-seven may interrupt them.
+
+### Rule SP-INT-02 — 8 and red 2
+An 8 cannot substitute from a group while that group is subject to an open red-2 counter window. Once the window closes or the transfer is countered and reversed, the group may be targeted if it is otherwise eligible.
+
+### Rule SP-INT-03 — 8 and black 2
+An 8 substitution is not a counter and cannot be used to respond to a red 2. Black-2 counter is the only counter mechanism.
+
+### Rule SP-INT-04 — Joker identity
+A joker's logical identity is fixed when it is played. An 8 substituting a joker assumes its fixed logical identity in the target slot. The removed joker may choose a new identity only when it is legally placed into a new group. Joker identities cannot duplicate another logical identity within the same group.
+
+### Rule SP-INT-05 — Special cards as ordinary members
+A 2 or 8 may be played as an ordinary group member. This ordinary placement does not activate the ability and does not exhaust the card. Such a card may later be targeted by a special 8, subject to the target rules.
+
+### Rule SP-INT-06 — Card movement restriction
+Cards may leave groups only through a valid 8 substitution or the explicit going-out-card procedure. Red 2 moves an entire group between table sides without removing cards from the group. No special action may break a group into individual cards.
+
+## 10. Mandatory-play versus discard and going out
 
 A normal turn requires a discard after mandatory plays. The turn-end resolution is deterministic:
 
@@ -248,132 +282,120 @@ A normal turn requires a discard after mandatory plays. The turn-end resolution 
 8. If a black 2 successfully draws seven cards for the player who went out, the game resumes: the player who went out returns to play with those cards, the going-out discard remains in the discard pile, and the normal turn sequence resumes with that player as the next active player. The +20 bonus is not awarded unless a later going-out action ends the game.
 9. If draw sources cannot complete the required seven cards, the game ties immediately and is scored without the +20 bonus.
 
-## 12\. Draw source fallback and tie
+## 11. Draw source fallback and tie
 
-For normal draws and draw-seven:
+### Rule DR-01 — Draw-seven source order
+For black-2 draw-seven, take cards in this order: (1) discard pile, top card downward; (2) draw pile, top card downward; (3) opponent's hand, randomly and without revealing remaining cards. Continue until seven cards are obtained or all sources are empty. If fewer than seven can be obtained, end the game in a tie immediately.
 
-1. Use the discard pile first, if applicable and cards remain; for draw-seven, take discard cards top-down.
-2. Use the draw pile next (top-down).
-3. For remaining cards, draw blindly from the opponent's hand, without revealing the remaining hand.
-4. If the requested draw cannot be completed because all permitted sources are exhausted, the game ends in a tie and is scored immediately.
-5. Discard-pile draws for ordinary turns still require a player's choice as defined in Section 7; this fallback is automatic only when a draw is required and other prescribed sources are exhausted.
-6. A card drawn blindly from the opponent's hand is placed in the drawing player's hand. It may become playable and triggers reevaluation of mandatory plays at the appropriate point in the turn; it does not expose the opponent's hand.
-7. If both players have empty hands and the draw pile is empty, game ends in a tie and scores immediately.
+### Rule DR-02 — Ordinary draw source
+For a normal turn draw, the player chooses among legal draw-pile draw, top-discard draw, or indexed discard pickup as specified in Section 7. If the required draw cannot be made from the draw pile, use the fallback sources: discard pile first (top-down), then opponent's hand blindly. If the required draw cannot be obtained, end the game in a tie.
 
-## 13\. Scoring
+### Rule DR-03 — No reshuffle
+The discard pile is never reshuffled into the draw pile. It may be empty.
+
+### Rule DR-04 — Blind opponent-hand draw
+Cards taken from an opponent's hand are selected uniformly at random by the engine and not revealed to the drawing player beyond the card(s) transferred. The opponent's remaining hand stays private. A transferred card may become playable; the drawing player's mandatory-play opportunities are recalculated at the appropriate turn point.
+
+### Rule DR-05 — Empty-state tie
+If a required draw cannot be completed, the game ends in a tie. The tie is scored immediately, with no going-out bonus. If both hands are empty and the draw pile is empty, the game also ends in a tie.
+
+## 12. Scoring
 
 Scoring is card-by-card based on current ownership and zone. Table cards score positively; cards in hand score negatively; exhausted cards and cards in draw/discard pile do not score. The going-out discard is not on the table and does not score.
 
 ### 13.1 Table card values
+| Logical/physical card | Score |
+|---|---:|
+| 2–9 | +5 |
+| 10, J, Q, K | +10 |
+| Ace | +15 |
 
-|Logical/physical card|Score|
-|-|-:|
-|2–9|+5|
-|10, J, Q, K|+10|
-|Ace|+15|
-
-* Ordinary table cards score according to their logical identity, unless physical value is expressly used for an exhausted/ordinary substitute card.
-* Joker on table scores its logical identity value.
-* Substitute-8 used in a table slot scores 0. The card it replaced, once played elsewhere, scores based on its logical/physical identity as a card in its new group, for its new owner.
-* A physical card is counted once only. A substitute 8 contributes zero, not both the 8's normal value and the represented identity's value.
+- Ordinary table cards score according to their logical identity, unless physical value is expressly used for an exhausted/ordinary substitute card.
+- Joker on table scores its logical identity value.
+- Substitute-8 used in a table slot scores 0. The card it replaced, once played elsewhere, scores based on its logical/physical identity as a card in its new group, for its new owner.
+- A physical card is counted once only. A substitute 8 contributes zero, not both the 8's normal value and the represented identity's value.
 
 ### 13.2 Hand values
-
-|Card in hand|Score|
-|-|-:|
-|2–9|-5|
-|10, J, Q, K|-10|
-|Ace|-15|
-|Joker|-10|
-|8|-5|
-|2|-5|
+| Card in hand | Score |
+|---|---:|
+| 2–9 | -5 |
+| 10, J, Q, K | -10 |
+| Ace | -15 |
+| Joker | -10 |
+| 8 | -5 |
+| 2 | -5 |
 
 An unplayed joker is -10 regardless of assigned identity (none). An unplayed special 8/2 is -5.
 
 ### 13.3 Exhausted cards
-
 Exhausted cards score 0 and are excluded from totals. Exhausted cards are visible and cannot be retrieved.
 
 ### 13.4 Bonus and tie
+- The +20 going-out bonus is awarded only to the player whose going-out response window closes without a successful black-2 continuation.
+- Ties due to exhaustion of draw sources or both players emptying under the tie rule are scored immediately without a going-out bonus.
+- Scores are calculated once per terminal game state.
 
-* The +20 going-out bonus is awarded only to the player whose going-out response window closes without a successful black-2 continuation.
-* Ties due to exhaustion of draw sources or both players emptying under the tie rule are scored immediately without a going-out bonus.
-* Scores are calculated once per terminal game state.
-
-## 14\. Game-end conditions
+## 13. Game-end conditions
 
 Game ends only on:
-
-1. Finalized going-out state (Section 11); or
+1. Finalized going-out state (Section 10); or
 2. Tie due to inability to complete required draw / specified empty-state tie.
 
 A finalized game state is immutable: no card action can be initiated after it.
 
-## 15\. Draw source priority (implementation algorithm)
+## 14. Draw source priority (implementation algorithm)
 
-For a required draw of `N` cards (including black-2 draw-seven), repeat until N fulfilled or sources exhausted:
+This section is an implementation restatement of Rule DR-01 and Rule DR-02, not a separate rule. For black-2 draw-seven, use discard pile (top-down), then draw pile (top-down), then opponent's hand (uniform random, hidden). For normal draws, use the draw choice rules in Section 7; only when the required draw cannot be fulfilled use the defined fallback. Never reshuffle the discard pile. If the required quantity cannot be drawn, end in a tie immediately.
 
-* **Priority A — discard pile:** take top discard(s), until discard empty or N fulfilled. The face-down going-out card, if present, is considered the top discard and its identity remains hidden from players but available to the engine.
-* **Priority B — draw pile:** take top draw card(s), until draw pile empty or N fulfilled.
-* **Priority C — opponent hand:** take cards randomly/without choice, one at a time, from opponent's hand, until N fulfilled or opponent hand empty. (Use a uniform random choice among opponent's cards.)
-* If fewer than N are obtained, terminate as tie immediately.
-
-For an ordinary draw when all source piles are empty, use one card from opponent's hand by the same random method. If all sources are empty, tie.
-
-**Note:** Indexed discard-pile pickup is a player-selected draw option during normal turn, not the automatic fallback algorithm. The automatic priority is used for black-2 draw-seven and required fallback draws.
-
-## 16\. Engine state machine
+## 15. Engine state machine
 
 Suggested phases/states:
-
-* `SETUP\_SHUFFLE`
-* `DEAL`
-* `HAND\_SPECIAL\_CHECK`
-* `OPENING\_BET`
-* `OPENING\_SELECTION`
-* `TURN\_DRAW`
-* `MANDATORY\_PLAY`
-* `SPECIAL\_ACTION\_WINDOW`
-* `DISCARD`
-* `GOING\_OUT\_RESPONSE`
-* `DRAW\_SEVEN`
-* `RED2\_RESPONSE\_CHAIN`
-* `GAME\_OVER`
-* `TIE`
+- `SETUP_SHUFFLE`
+- `DEAL`
+- `HAND_SPECIAL_CHECK`
+- `OPENING_BET`
+- `OPENING_SELECTION`
+- `TURN_DRAW`
+- `MANDATORY_PLAY`
+- `SPECIAL_ACTION_WINDOW`
+- `DISCARD`
+- `GOING_OUT_RESPONSE`
+- `DRAW_SEVEN`
+- `RED2_RESPONSE_CHAIN`
+- `GAME_OVER`
+- `TIE`
 
 ### Core transitions
+- Setup/deal → valid special check → opening bet; invalid special check → shuffle/deal loop.
+- Opening bet → selection → first turn.
+- Turn draw → mandatory loop → optional special action windows → discard or going-out.
+- Red 2 action → response window; counter restores/undoes transfer and returns to chain; no response finalizes transfer.
+- Draw-seven → source-priority algorithm → resume game or tie.
+- Going out → response window; black 2 draw-seven resumes; no response finalizes score.
+- Terminal game → scoring exactly once.
 
-* Setup/deal → valid special check → opening bet; invalid special check → shuffle/deal loop.
-* Opening bet → selection → first turn.
-* Turn draw → mandatory loop → optional special action windows → discard or going-out.
-* Red 2 action → response window; counter restores/undoes transfer and returns to chain; no response finalizes transfer.
-* Draw-seven → source-priority algorithm → resume game or tie.
-* Going out → response window; black 2 draw-seven resumes; no response finalizes score.
-* Terminal game → scoring exactly once.
-
-## 17\. Cumulative match mode
+## 16. Cumulative match mode
 
 Default cumulative match settings, unless players agree otherwise before the first game:
-
-* Target: 1000 points.
-* Each game score is added to cumulative total.
-* Match winner: first player whose cumulative score reaches or exceeds 200 after a game.
-* If both players reach or exceed 200 in the same game, higher cumulative score wins; if tied, play another game and totals carry forward until one player leads after a completed game.
-* No game-level bonus is altered for cumulative mode.
+- Target: 200 points.
+- Each game score is added to cumulative total.
+- Match winner: first player whose cumulative score reaches or exceeds 200 after a game.
+- If both players reach or exceed 200 in the same game, higher cumulative score wins; if tied, play another game and totals carry forward until one player leads after a completed game.
+- No game-level bonus is altered for cumulative mode.
 
 Single-game mode has no target; highest score wins.
 
-## 18\. Test-case conventions
+## 17. Test-case conventions
 
-* `P1`, `P2` denote players.
-* Card notation: rank+suit (`AH`, `7C`, `8S`); joker as `Joker-1`.
-* Test cases are deterministic fixtures. Tests describe expected state changes, not randomness in setup.
-* For random draw tests, use a scripted random source to make outcomes reproducible.
-* Each case should assert zone membership, card owner, group type/order/logical identity, special-status, terminal flag, and score where relevant.
+- `P1`, `P2` denote players.
+- Card notation: rank+suit (`AH`, `7C`, `8S`); joker as `Joker-1`.
+- Test cases are deterministic fixtures. Tests describe expected state changes, not randomness in setup.
+- For random draw tests, use a scripted random source to make outcomes reproducible.
+- Each case should assert zone membership, card owner, group type/order/logical identity, special-status, terminal flag, and score where relevant.
 
-\---
+---
 
-# 19\. Acceptance-test catalogue
+# 19. Acceptance-test catalogue
 
 Each test is a minimal fixture. “Expected” describes required engine outcome.
 
@@ -839,31 +861,65 @@ Expected: P1 wins.
 **DF-MATCH-05 — Both totals equal or same-game tie at target.**  
 Expected: continue; carry totals; determine winner after completed game when one leads.
 
-\---
+---
 
-## 20\. Implementation checklist
+### M. Special-card logic integration tests
 
-* \[ ] Unique card IDs and deterministic zone transitions.
-* \[ ] Seedable shuffle/random source.
-* \[ ] Atomic validation/rollback for rejected actions.
-* \[ ] Mandatory-play loop recomputed after each placement.
-* \[ ] Logical identity and physical identity stored independently.
-* \[ ] Stable group IDs and member ordering.
-* \[ ] Card-level scoring ownership independent of group-side ownership.
-* \[ ] Special 2/8 abilities exhaust immediately and cannot be reused.
-* \[ ] Red-2 chain action stack/response windows.
-* \[ ] Counter rollback preserves later unrelated edits.
-* \[ ] 8 substitution validates immediate placement before committing.
-* \[ ] Discard pile index and order semantics.
-* \[ ] Hidden-hand and face-down going-out discard visibility.
-* \[ ] Draw-seven source priority and tie detection.
-* \[ ] Scoring function counts each physical card once.
-* \[ ] Terminal scoring and bonus guarded against duplicate execution.
-* \[ ] Full acceptance suite DF-SET through DF-MATCH implemented.
+**DF-SP-INT-01 — Invalid action atomicity.** Attempt a red-2 transfer with no target. Expected: card remains in hand and available; no state mutation.
 
-\---
+**DF-SP-INT-02 — Counter window exclusive.** During a red-2 response window, attempt an 8 substitution or ordinary play. Expected: reject; only black-2 counter is permitted.
 
-## 21\. Resolved-rule choices and rationale
+**DF-SP-INT-03 — Counter rollback exactness.** P1 red-2 transfers group G; P2 counters. Expected: G returns to its original side; red 2 and black 2 are exhausted; card ownership unchanged; no other state changes.
+
+**DF-SP-INT-04 — No red-on-red response.** Attempt to play red 2 while red-2 counter window is open. Expected: reject.
+
+**DF-SP-INT-05 — Counter mode declaration.** Black 2 is declared draw-seven during an open counter window. Expected: reject; draw-seven cannot be used as a response/counter.
+
+**DF-SP-INT-06 — 8 substitution fully validated.** Removed card has no legal destination. Expected: reject atomically; 8 remains available; target and removed card unchanged.
+
+**DF-SP-INT-07 — Set-four exception.** Remove card from three-card set and fill fourth unique identity. Expected: valid four-member set; 8 represents target identity; removed card returns as fourth member.
+
+**DF-SP-INT-08 — No same-group return in run.** Attempt to return removed card to same run. Expected: reject.
+
+**DF-SP-INT-09 — Substitute an ordinary 8.** Target ordinary-played 8. Expected: substitute assumes its group logical identity; removed physical 8 is re-placed; special 8 activation is consumed.
+
+**DF-SP-INT-10 — Substitute a substitute 8.** Target substitute 8. Expected: new 8 takes target slot; old substitute 8 goes to exhausted pile; removed logical member is immediately placed as defined by target/removal handling.
+
+**DF-SP-INT-11 — Red-2 transfer versus 8 timing.** Attempt 8 during open counter window. Expected: rejected. After window closes, attempt valid 8. Expected: allowed.
+
+**DF-SP-INT-12 — Discard-pile 8 index.** Replace discard card at index i. Expected: selected card enters group, 8 occupies index i, other discard cards maintain relative order.
+
+**DF-SP-INT-13 — Joker target identity.** Substitute a joker whose identity is fixed. Expected: 8 takes that identity; joker receives new identity only at its legal new placement.
+
+**DF-SP-INT-14 — No duplicate identities.** Substitution would create duplicate logical identity in a group. Expected: reject without consuming 8.
+
+**DF-SP-INT-15 — Special used as ordinary.** Play 2 or 8 into a group normally. Expected: ability remains available and card stays in group.
+
+**DF-SP-INT-16 — No overlapping action resolution.** Try to initiate another special action before the first action/window resolves. Expected: reject.
+
+## 18. Implementation checklist
+
+- [ ] Unique card IDs and deterministic zone transitions.
+- [ ] Seedable shuffle/random source.
+- [ ] Atomic validation/rollback for rejected actions.
+- [ ] Mandatory-play loop recomputed after each placement.
+- [ ] Logical identity and physical identity stored independently.
+- [ ] Stable group IDs and member ordering.
+- [ ] Card-level scoring ownership independent of group-side ownership.
+- [ ] Special 2/8 abilities exhaust immediately and cannot be reused.
+- [ ] Red-2 chain action stack/response windows.
+- [ ] Counter rollback preserves later unrelated edits.
+- [ ] 8 substitution validates immediate placement before committing.
+- [ ] Discard pile index and order semantics.
+- [ ] Hidden-hand and face-down going-out discard visibility.
+- [ ] Draw-seven source priority and tie detection.
+- [ ] Scoring function counts each physical card once.
+- [ ] Terminal scoring and bonus guarded against duplicate execution.
+- [ ] Full acceptance suite DF-SET through DF-MATCH implemented.
+
+---
+
+## 19. Resolved-rule choices and rationale
 
 These choices are adopted to eliminate implementation ambiguity; they are defaults of this specification rather than claims that every earlier wording was explicit:
 
@@ -883,4 +939,3 @@ These choices are adopted to eliminate implementation ambiguity; they are defaul
 14. **Two consecutive black 2s:** permitted for two draw-seven actions, or where chain rules create a legal intervening response; no self-counter.
 
 This is the deterministic implementation contract. If the table rules are later changed, update this document and the associated test fixtures together.
-
