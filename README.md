@@ -3,13 +3,28 @@
 A complete implementation of *Drunken Frenchman — Formal Game-Engine Specification v1.0* as a localhost website.
 No installs, no internet, no dependencies: just Node.js (or Python 3 as a fallback).
 
-## Run it
-- **macOS / Linux:** `./start.sh`
-- **Windows:** double-click `start.bat`
-- or: `node server.js [port]` (default port 8765), then open **http://localhost:8765**
-- No Node? `python3 serve.py` serves the same files.
+## Play it (from the GitHub zip)
+1. On GitHub click **Code → Download ZIP**, then unzip it anywhere.
+2. Start the game:
+   - **Mac:** double-click **`Start-Mac.command`**.
+   - **Windows:** double-click **`Start-Windows.bat`**.
+3. Your browser opens the game (http://localhost:8765). Keep the little window open while you play; close it to stop the game.
 
-Cards are drawn with CSS (no image files). Games autosave in your browser; "Resume saved game" is on the menu.
+Nothing needs installing. The launcher hosts the game with Node.js, Python, or (on Mac) the Ruby that ships with macOS, whichever it finds.
+If it finds none of them it opens the game straight from the folder, which plays exactly the same.
+
+**Simplest of all:** double-click **`index.html`** in the unzipped folder. It opens the game with no server and no launcher.
+
+### First-run security prompts (normal for downloaded files)
+- **Mac:** if macOS says the `.command` file "can't be opened" because it is from an unidentified developer, **right-click it → Open → Open** (once). If it says you don't have permission to run it, open Terminal, type `bash ` (with a space), drag the file into the window, and press Return. Or just use `index.html`.
+- **Windows:** if "Windows protected your PC" appears, click **More info → Run anyway**. Or just use `index.html`.
+
+### Other ways to start it
+- Terminal: `node server.js [port]` or `python3 serve.py [port]`; add `--no-open` to stop it opening the browser. If the port is busy it tries the next one.
+- Linux: `./start.sh`.
+- Maintainers: GitHub's web uploader drops the "executable" flag, so after uploading run `git update-index --chmod=+x Start-Mac.command start.sh serve.py` and commit. (`.gitattributes` already keeps line endings correct for the launchers.)
+
+Cards are drawn with CSS (no image files). Games autosave in your browser; "Resume saved game" appears on the menu.
 
 ## House rules in this build
 - **Special cards are never forced:** a joker or an unused 2 or 8 (alone or as part of a group) does not have to be played, even when it could be. You can still play them ordinarily if you want. The one exception is the card you pick up from deep in the discard pile, which must be placed. Used (exhausted) 2s/8s are ordinary cards again.
@@ -34,7 +49,7 @@ catalogue plus a 300-game random-play fuzz that checks every card is always in e
 ## Files
 - `public/engine.js` — the rules engine (pure, seedable, atomic actions; browser + Node)
 - `public/app.js`, `style.css`, `index.html` — UI
-- `server.js` / `serve.py` — local servers
+- `server.js` / `serve.py` — local servers; `Start-Mac.command`, `Start-Windows.bat`, `start.sh` — launchers; `index.html` — no-server entry point
 
 ## Interpretation choices (where the spec was silent, inconsistent, or you directed otherwise)
 See `DEVELOPMENT_NOTES.md` for the full rule-by-rule audit. In short:

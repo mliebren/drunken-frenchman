@@ -1,10 +1,12 @@
 // Drunken Frenchman — zero-dependency local web server (Node.js 14+).
-// Usage:  node server.js [port]     then open http://localhost:8765
+// Usage:  node server.js [port] [--no-open]      (default port 8765; tries the next ports if it is busy)
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { exec } = require('child_process');
 
-const PORT = Number(process.argv[2] || process.env.PORT || 8765);
+const START_PORT = Number(process.argv.find((a) => /^\d+$/.test(a)) || process.env.PORT || 8765);
+const OPEN_BROWSER = !process.argv.includes('--no-open') && !process.env.NO_OPEN;
 const ROOT = path.join(__dirname, 'public');
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -23,11 +25,27 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.on('error', (e) => {
-  if (e.code === 'EADDRINUSE') console.error(`Port ${PORT} is busy. Try:  node server.js ${PORT + 1}`);
-  else console.error(e);
-  process.exit(1);
+// Open the game in the player's default browser (macOS, Windows or Linux).
+function openBrowser(url) {
+  if (!OPEN_BROWSER) return;
+  const cmd = process.platform === 'darwin' ? `open "${url}"` : process.platform === 'win32' ? `start "" "${url}"` : `xdg-open "${url}"`;
+  exec(cmd, () => { /* if it fails, the URL is printed below anyway */ });
+}
+
+// Announce (and open the browser) exactly once, on whichever port we end up with.
+server.once('listening', () => {
+  const url = `http://localhost:${server.address().port}`;
+  console.log(`\n  Drunken Frenchman is running at  ${url}\n  Leave this window open while you play. Close it (or press Ctrl+C) to stop.\n`);
+  openBrowser(url);
 });
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`\n  Drunken Frenchman is running at  http://localhost:${PORT}\n  Press Ctrl+C to stop.\n`);
-});
+
+// If the port is taken (for example a previous copy is still running), quietly try the next one.
+function listen(port, attemptsLeft) {
+  server.once('error', (e) => {
+    if (e.code === 'EADDRINUSE' && attemptsLeft > 0) return listen(port + 1, attemptsLeft - 1);
+    console.error(e.code === 'EADDRINUSE' ? 'No free port found between ' + START_PORT + ' and ' + port + '.' : e);
+    process.exit(1);
+  });
+  server.listen(port, '127.0.0.1');
+}
+listen(START_PORT, 10);
