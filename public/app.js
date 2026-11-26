@@ -11,7 +11,7 @@
   const BOT = 1; // in single-player mode the human is seat 0, the bot is seat 1
   let botTimer = null;
   const ui = { botError: false, vsBot: false, seat: null, sel: [], mode: null, pick: null, choice: null, msg: null, modal: null, log: false, sort: 'suit', hint: null,
-    setup: { n0: 'Player 1', n1: 'Player 2', opp: 'bot', mode: 'single', target: 200, seed: '' } };
+    setup: { n0: 'Player 1', n1: 'Player 2', opp: 'bot', stalemate: false, mode: 'single', target: 200, seed: '' } };
 
   /* ------------------------------------------------------------ persistence */
   const KEY = 'drunken-frenchman-save-v1';
@@ -122,6 +122,7 @@
             <input type="number" min="20" step="10" value="${s.target}" data-bind="target" style="width:84px;background:#0d2a2a;border:1px solid #3e6b5e;border-radius:6px;color:inherit;padding:4px 6px"> points</label>
         </div>
       </div>
+      <div class="field"><label><input type="checkbox" data-bind="stalemate" ${s.stalemate ? 'checked' : ''}> House rule: end a stalled game in a tie (draw pile empty and nothing played for six rounds). Off by default — not part of the rulebook.</label></div>
       <div class="field"><label for="seed">Shuffle seed (optional — the same seed gives the same deal)</label><input id="seed" type="text" value="${esc(s.seed)}" data-bind="seed" placeholder="leave blank for a random deal"></div>
       <div class="row" style="margin-top:14px">
         <button class="btn" data-act="start">Deal the cards</button>
@@ -204,14 +205,14 @@
     return `<section class="mid">
       <div class="pile"><div style="position:relative;display:inline-block">${G.draw.length ? cardHTML(null, { back: true, size: 'md', cls: canDraw ? 'click' : '', attr: canDraw ? 'data-act="drawpile"' : '' }) : '<span class="empty">empty</span>'}<span class="count">${G.draw.length}</span></div><div class="cap">Draw pile${canDraw ? ' — click to draw' : ''}</div></div>
       <div class="discard"><div class="dh">Discard pile (oldest → newest)${turn && G.discard.length ? ' — click a card to pick it up along with every card above it' : ''}</div><div class="drow">${dr || '<span class="empty">empty</span>'}</div></div>
-      <div class="pile"><div class="used">${used.length ? used.map((c) => cardHTML(c, { size: 'xs' })).join('') : '<span class="empty">none</span>'}</div><div class="cap">Used 2s (out of play)</div></div>
+      <div class="pile"><div class="used">${used.length ? used.map((c) => cardHTML(c, { size: 'xs' })).join('') : '<span class="empty">none</span>'}</div><div class="cap">Used cards (out of play)</div></div>
     </section>`;
   }
 
   /* ---- dock ---- */
   function specialButtons() {
     const m = me(), sp = DF.specialsFor(G, m), out = [];
-    const inTurn = (G.phase === 'TURN_DRAW' || G.phase === 'MANDATORY_PLAY');
+    const inTurn = G.phase === 'MANDATORY_PLAY'; // SP-05: special actions only after the draw
     if (inTurn) {
       sp.red2.forEach((id) => out.push(`<button class="btn wine small" data-act="red2" data-id="${id}" ${DF.red2Targets(G, m).length ? '' : 'disabled title="No target group"'}>Red 2 ${SYM[G.cards[id].suit]}: take a group</button>`));
       sp.black2.forEach((id) => out.push(`<button class="btn wine small" data-act="seven" data-id="${id}">Black 2 ${SYM[G.cards[id].suit]}: ${esc(G.names[1 - m])} draws seven</button>`));
@@ -256,10 +257,9 @@
         ${mand ? '<button class="btn ghost" data-act="showplay">Show me a legal play</button>' : ''}
         ${n === 0 ? '<button class="btn" data-act="endturn">End turn</button>' : ''}`;
     } else if (ph === 'RED2_RESPONSE_CHAIN') {
-      const sp = DF.specialsFor(G, m), top = G.chain.stack[G.chain.stack.length - 1];
-      status = `<b>${nm(top.actor)}</b> played a red 2 and took a group. Counter with a black 2, answer with your own red 2, or let it stand.`;
+      const sp = DF.specialsFor(G, m), taken = G.groups[G.chain.targetId];
+      status = `<b>${nm(G.chain.actor)}</b> played a red 2 and took <b>${esc(DF.groupLabel(G, taken))}</b>. Only a black 2 can answer: counter it to send the group back, or let it stand.`;
       btns = sp.black2.map((id) => `<button class="btn wine" data-act="counter" data-id="${id}">Counter with black 2 ${SYM[G.cards[id].suit]}</button>`).join('')
-        + sp.red2.map((id) => `<button class="btn wine" data-act="red2" data-id="${id}" ${DF.red2Targets(G, m).length ? '' : 'disabled'}>Answer with red 2 ${SYM[G.cards[id].suit]}</button>`).join('')
         + `<button class="btn" data-act="pass">Let it stand</button>`;
     } else if (ph === 'GOING_OUT_RESPONSE') {
       const sp = DF.specialsFor(G, m);
@@ -267,7 +267,7 @@
       btns = sp.black2.map((id) => `<button class="btn wine" data-act="seven" data-id="${id}">Black 2 ${SYM[G.cards[id].suit]}: ${nm(G.goingOut.player)} draws seven</button>`).join('')
         + `<button class="btn" data-act="goout">${sp.black2.length ? 'Let the game end' : 'Continue — the game ends'}</button>`;
     }
-    const specials = (ph === 'TURN_DRAW' || ph === 'MANDATORY_PLAY') && !ui.mode ? specialButtons() : '';
+    const specials = ph === 'MANDATORY_PLAY' && !ui.mode ? specialButtons() : '';
     return `<div class="dock">${latestHTML()}${msg}<div class="status">${status}</div><div class="actions">${btns}${specials ? '<span class="sep"></span>' + specials : ''}</div>${handHTML(m)}</div>`;
   }
 
@@ -338,8 +338,9 @@
       <li><b>Turn:</b> draw (pile, top discard, or pick up deeper in the discard pile — the card you pick must be played that turn), then <b>play every card you legally can</b>, then discard one. Jokers and unused 2s and 8s are the exception: you are never forced to play them into a group (the card you pick up from the discard pile must still be placed).</li>
       <li><b>Set:</b> 3–4 cards of one rank, all different suits. <b>Run:</b> 3–13 consecutive cards of one suit, Ace high only (Q-K-A is fine, K-A-2 is not). Jokers pick an identity when played and keep it.</li>
       <li>You may add cards to <b>either</b> player’s groups. Points belong to whoever played each card.</li>
-      <li><b>Red 2:</b> take one of your opponent’s whole groups. They may counter with a black 2. <b>Black 2:</b> counter a red 2, <i>or</i> make your opponent draw seven (discard pile first, then draw pile, then blindly from your hand; if there aren’t enough cards the game ends in a tie).</li>
-      <li><b>8:</b> swap into any table card (or any discard). The removed card must be placed legally at once. A used 8 scores 0 in a group.</li>
+      <li><b>Special actions</b> are played after you draw and before you discard (a black 2 can also be played in the response windows).</li>
+      <li><b>Red 2:</b> take one of your opponent’s whole groups; card points stay with whoever played each card, and groups never merge. Only a black 2 can answer a red 2 (it sends the group back). <b>Black 2:</b> counter a red 2, <i>or</i> make your opponent draw seven (discard pile first, then draw pile, then blindly from your hand; if there aren’t enough cards the game ends in a tie).</li>
+      <li><b>8:</b> swap into any table card (or any discard). The removed card must be placed legally at once. A used 8 scores 0 in a group; if a later 8 replaces it, the old 8 leaves play.</li>
       <li><b>Going out:</b> empty your hand — by playing cards (your last card then goes face-down to the discard pile, provided its group stays valid) or by discarding your last card (face-down). Your opponent may then answer <i>only</i> with a black 2, which makes you draw seven and play on; otherwise the game ends and you score +20.</li>
       <li><b>Scoring:</b> table cards +5 (2–9), +10 (10–K), +15 (A). Hand cards −5/−10/−15, Joker −10. Used 2s score 0.</li></ul>`, [{ label: 'Close', fn: closeModal }]);
   }
@@ -434,18 +435,14 @@
     const m = me(), opts = DF.eightPlacements(G, m, ui.mode.eightId, target);
     if (!opts.length) return toast('That swap is not allowed: the removed card would have no legal place to go.');
     const eid = ui.mode.eightId;
+    if (opts.length === 1 && opts[0].placement.kind === 'exhaust') return act({ type: 'eightTable', eightId: eid, targetId: target.table, placement: opts[0].placement });
     const seen = new Set(), uniq = opts.filter((o) => (seen.has(o.label) ? false : (seen.add(o.label), true))).slice(0, 40);
     const go = (o) => act(target.table ? { type: 'eightTable', eightId: eid, targetId: target.table, placement: o.placement } : { type: 'eightDiscard', eightId: eid, index: target.discard, placement: o.placement });
     chooseModal('Where does ' + esc(labelCard) + ' go?', 'The swapped-out card must be placed immediately.', uniq.map((o) => ({ html: `${o.spec ? miniSpec(o.spec.members) : ''}<span>${esc(o.label)}</span>`, fn: () => go(o) })));
   }
   function red2Target(gid) {
-    const m = me(), id = ui.mode.cardId;
-    if (!DF.red2Targets(G, m).includes(gid)) return toast('Choose one of the opponent’s groups (not one that was just targeted).');
-    const merges = DF.mergeChoices(G, m, gid);
-    const go = (into) => act({ type: 'red2', cardId: id, targetId: gid, mergeIntoId: into || null });
-    if (!merges.length) return go(null);
-    chooseModal('Take ' + esc(DF.groupLabel(G, G.groups[gid])), 'You can keep it as a separate group, or merge it into one of your own.',
-      [{ html: '<span>Keep it separate</span>', fn: () => go(null) }, ...merges.map((mid) => ({ html: `<span>Merge into ${esc(DF.groupLabel(G, G.groups[mid]))}</span>`, fn: () => go(mid) }))]);
+    if (!DF.red2Targets(G, me()).includes(gid)) return toast('Choose one of the opponent’s groups.');
+    act({ type: 'red2', cardId: ui.mode.cardId, targetId: gid }); // R2-04: groups never merge
   }
   function confirmSeven(id) {
     const m = me(), victim = G.phase === 'GOING_OUT_RESPONSE' ? G.goingOut.player : 1 - m;
@@ -461,6 +458,7 @@
     const seed = s.seed.trim() ? [...s.seed.trim()].reduce((h, ch) => (Math.imul(h, 31) + ch.charCodeAt(0)) >>> 0, 7) : undefined;
     ui.vsBot = s.opp === 'bot';
     G = DF.newGame({ seed, names: [(ui.vsBot && s.n0.trim() === 'Player 1' ? '' : s.n0.trim()) || (ui.vsBot ? 'You' : 'Player 1'), ui.vsBot ? 'Marcel (bot)' : (s.n1.trim() || 'Player 2')],
+      stalemateRule: s.stalemate,
       match: { mode: s.mode, target: Math.max(20, +s.target || 200), totals: [0, 0], games: 0 } });
     ui.seat = ui.vsBot ? 0 : null; ui.sel = []; ui.mode = null; ui.modal = null; ui.msg = null; save(); render();
   }
@@ -517,7 +515,7 @@
     pass: () => act({ type: 'passChain' }),
     goout: () => act({ type: 'goingOutPass' }),
     nextgame: () => {
-      G = DF.newGame({ names: G.names, match: JSON.parse(JSON.stringify(G.match)) });
+      G = DF.newGame({ names: G.names, stalemateRule: G.stalemateRule, match: JSON.parse(JSON.stringify(G.match)) });
       ui.seat = ui.vsBot ? 0 : null; ui.sel = []; ui.mode = null; save(); render();
     },
     modalbtn: (d) => { const a = ui.modal.actions[+d.i]; if (a && a.fn) a.fn(); },
@@ -533,7 +531,7 @@
   });
   document.addEventListener('input', (ev) => {
     const b = ev.target.dataset && ev.target.dataset.bind;
-    if (b) { ui.setup[b] = ev.target.value; if (ev.target.dataset.rerender) render(); }
+    if (b) { ui.setup[b] = ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value; if (ev.target.dataset.rerender) render(); }
   });
   document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && ui.modal) closeModal(); });
 

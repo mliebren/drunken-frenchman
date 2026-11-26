@@ -112,6 +112,7 @@
       bets: [null, null], pool: null, opening: null,
       phase: 'OPENING_BET', current: 0, drawn: false, turnNo: 0,
       chain: null, goingOut: null, result: null, redeals: 0, log: [],
+      stalemateRule: !!opts.stalemateRule, stale: 0, // optional house rule, OFF by default (not part of the spec)
     };
     const ids = allIds();
     ids.forEach((id) => { s.cards[id] = makeCard(id); });
@@ -349,10 +350,10 @@
     const c = s.current, o = other(c);
     if (s.draw.length === 0 && s.hands[0].length === 0 && s.hands[1].length === 0) return finish(s, { tie: true, reason: 'Both hands and the draw pile are empty.' });
     if (s.draw.length === 0 && s.discard.length === 0 && s.hands[o].length === 0) return finish(s, { tie: true, reason: 'No card source is left to draw from.' });
-    // Practical safeguard (not in the spec): with the draw pile empty and nothing played for six rounds, the game would loop forever.
-    if (s.draw.length === 0) {
-      s.stale = (s.stale || 0) + 1;
-      if (s.stale >= 12) return finish(s, { tie: true, reason: 'Stalemate: the draw pile is empty and no card has been played for six rounds.' });
+    // Optional house rule (off unless chosen at setup): with the draw pile empty and no card played or used for six rounds, end in a tie.
+    if (s.stalemateRule && s.draw.length === 0) {
+      s.stale++;
+      if (s.stale >= 12) return finish(s, { tie: true, reason: 'Stalemate house rule: the draw pile is empty and nothing has been played for six rounds.' });
     } else s.stale = 0;
   }
   function req(s, a, phases) {
@@ -373,37 +374,12 @@
     return true;
   }
 
-  /* ------------------------------------------------------------------ red-2 chain helpers */
-  function mergeCheck(s, tgt, into) { // returns ordered member ids if structurally legal & unambiguous
-    if (tgt.type !== into.type || tgt.id === into.id) return null;
-    const ids = [...into.members, ...tgt.members], ls = ids.map((i) => s.cards[i].logical);
-    if (tgt.type === 'set') {
-      if (ids.length > 4 || !ls.every((l) => l.rank === ls[0].rank) || new Set(ls.map((l) => l.suit)).size !== ids.length) return null;
-      return ids;
-    }
-    if (ids.length > 13 || !ls.every((l) => l.suit === ls[0].suit)) return null;
-    const sorted = ids.slice().sort((x, y) => s.cards[x].logical.rank - s.cards[y].logical.rank);
-    for (let i = 1; i < sorted.length; i++) if (s.cards[sorted[i]].logical.rank !== s.cards[sorted[i - 1]].logical.rank + 1) return null;
-    return sorted;
-  }
+  /* ------------------------------------------------------------------ red-2 helpers */
+  // R2-02: a red 2 may target any intact group currently on the opponent's side.
   function red2Targets(s, p) {
-    return Object.values(s.groups).filter((g) => {
-      if (g.side !== other(p)) return false;
-      if (s.chain && s.chain.stack.length) { const lt = s.chain.stack[s.chain.stack.length - 1].lastTarget; if (lt.groupId === g.id && !lt.merged) return false; }
-      return true;
-    }).map((g) => g.id);
+    return Object.values(s.groups).filter((g) => g.side === other(p)).map((g) => g.id);
   }
-  function restoreEntry(s, e) {
-    if (e.mergeBefore) {
-      const t = clone(e.targetBefore);
-      s.groups[t.id] = t;
-      const m = clone(e.mergeBefore); s.groups[m.id] = m;
-      t.members.forEach((id) => { s.cards[id].groupId = t.id; });
-      m.members.forEach((id) => { s.cards[id].groupId = m.id; });
-    } else {
-      s.groups[e.targetBefore.id].side = e.targetBefore.side;
-    }
-  }
+  // SP-06: when the window closes the red 2 stands; control returns to the player whose turn it is.
   function closeChain(s) { const ph = s.chain.resume; s.chain = null; s.phase = ph; }
 
   /* ------------------------------------------------------------------ action handlers */
@@ -450,7 +426,7 @@
     req(s, a, ['TURN_DRAW']);
     if (!s.discard.length) fail('The discard pile is empty.');
     const id = s.discard[s.discard.length - 1];
-    toHand(s, a.player, id);
+    toHand(s, a.player, id); s.lastTaken = id;
     s.drawn = true; s.phase = 'MANDATORY_PLAY';
     logp(s, `${nm(s, a.player)} takes the top discard (${cardName(s.cards[id])}).`);
   };
@@ -462,7 +438,7 @@
     const taken = s.discard.slice(i);
     taken.forEach((id) => toHand(s, a.player, id));
     if (!placeable(s, a.player, sel)) fail(`${cardName(s.cards[sel])} cannot be legally placed this turn, so that pickup is not allowed.`);
-    s.drawn = true; s.phase = 'MANDATORY_PLAY'; s.mustPlay = sel;
+    s.drawn = true; s.phase = 'MANDATORY_PLAY'; s.mustPlay = sel; s.lastTaken = sel;
     logp(s, `${nm(s, a.player)} picks up ${taken.length} card(s) from the discard pile, starting at ${cardName(s.cards[sel])}.`);
   };
   H.blindDraw = (s, a) => {
@@ -470,7 +446,8 @@
     if (s.draw.length || s.discard.length) fail('Other sources still have cards.');
     const o = other(a.player);
     if (!s.hands[o].length) return finish(s, { tie: true, reason: 'No card source is left to draw from.' });
-    toHand(s, a.player, s.hands[o][Math.floor(rnd(s) * s.hands[o].length)]);
+    const blind = s.hands[o][Math.floor(rnd(s) * s.hands[o].length)];
+    toHand(s, a.player, blind); s.lastTaken = blind;
     s.drawn = true; s.phase = 'MANDATORY_PLAY';
     logp(s, `${nm(s, a.player)} draws a random card from ${nm(s, o)}'s hand.`);
   };
@@ -536,49 +513,33 @@
     s.current = other(a.player); enterTurnDraw(s);
   };
 
-  /* ---- red 2 ---- */
+  /* ---- red 2 (R2-01..R2-09) ---- */
   H.red2 = (s, a) => {
-    req(s, a, ['TURN_DRAW', 'MANDATORY_PLAY', 'RED2_RESPONSE_CHAIN']);
+    req(s, a, ['MANDATORY_PLAY']); // SP-05: only after the draw, before the discard
     const p = a.player, c = inHand(s, p, a.cardId);
     if (!isRed2(c) || !specialActive(c)) fail('You need an unused red 2.');
     const tgt = s.groups[a.targetId];
-    if (!tgt || tgt.side !== other(p)) fail("Target one of your opponent's groups.");
-    if (!red2Targets(s, p).includes(tgt.id)) fail('That group was just targeted; pick a different group.');
-    let into = null;
-    if (a.mergeIntoId) {
-      into = s.groups[a.mergeIntoId];
-      if (!into || into.side !== p || !mergeCheck(s, tgt, into)) fail('Those groups cannot be merged.');
-    }
-    const entry = { actor: p, cardId: c.id, targetBefore: clone(tgt), mergeBefore: into ? clone(into) : null, lastTarget: null };
-    exhaust(s, c.id);
-    tgt.side = p;
-    if (into) {
-      const ids = mergeCheck(s, tgt, into);
-      ids.forEach((id) => { s.cards[id].groupId = into.id; });
-      into.members = ids; delete s.groups[tgt.id];
-      entry.lastTarget = { groupId: into.id, merged: true };
-    } else entry.lastTarget = { groupId: tgt.id, merged: false };
-    if (!s.chain) s.chain = { stack: [], resume: s.phase, responder: 0 };
-    s.chain.stack.push(entry);
-    s.chain.responder = other(p);
+    if (!tgt || tgt.side !== other(p)) fail("Target one of your opponent's groups."); // R2-02 / R2-09
+    const fromSide = tgt.side;
+    exhaust(s, c.id);                // SP-03: exhausted immediately, even if countered later
+    tgt.side = p;                    // R2-03: the whole group moves; per-card scoring owners are unchanged
+    s.chain = { actor: p, responder: other(p), targetId: tgt.id, fromSide, resume: s.phase }; // R2-05: counter window
     s.phase = 'RED2_RESPONSE_CHAIN';
-    logp(s, `${nm(s, p)} plays a red 2 and takes ${groupLabel(s, into || tgt)}${into ? ' (merged)' : ''}!`);
+    logp(s, `${nm(s, p)} plays a red 2 and takes ${groupLabel(s, tgt)}!`);
   };
   H.counter = (s, a) => {
-    req(s, a, ['RED2_RESPONSE_CHAIN']);
+    req(s, a, ['RED2_RESPONSE_CHAIN']); // R2-05 / SP-INT-04: only a black 2 may answer a red 2
     const p = a.player, c = inHand(s, p, a.cardId);
     if (!isBlack2(c) || !specialActive(c)) fail('You need an unused black 2.');
-    const top = s.chain.stack[s.chain.stack.length - 1];
-    if (!top || top.actor === p) fail('You cannot counter your own red 2.');
+    if (s.chain.actor === p) fail('You cannot counter your own red 2.'); // B2-02
     exhaust(s, c.id);
-    restoreEntry(s, s.chain.stack.pop());
+    s.groups[s.chain.targetId].side = s.chain.fromSide; // R2-07: only the transfer is reversed
     logp(s, `${nm(s, p)} counters with a black 2 — the group goes back.`);
-    if (!s.chain.stack.length) closeChain(s);
-    else s.chain.responder = other(s.chain.stack[s.chain.stack.length - 1].actor);
+    closeChain(s);
   };
   H.passChain = (s, a) => {
     req(s, a, ['RED2_RESPONSE_CHAIN']);
-    logp(s, `${nm(s, a.player)} does not respond. The red 2 stands.`);
+    logp(s, `${nm(s, a.player)} does not respond. The red 2 stands.`); // R2-08
     closeChain(s);
   };
 
@@ -589,7 +550,7 @@
 
   /* ---- black 2 draw seven ---- */
   H.blackSeven = (s, a) => {
-    req(s, a, ['TURN_DRAW', 'MANDATORY_PLAY', 'GOING_OUT_RESPONSE']);
+    req(s, a, ['MANDATORY_PLAY', 'GOING_OUT_RESPONSE']); // SP-05
     const p = a.player, c = inHand(s, p, a.cardId);
     if (!isBlack2(c) || !specialActive(c)) fail('You need an unused black 2.');
     const victim = other(p), inWindow = s.phase === 'GOING_OUT_RESPONSE';
@@ -620,7 +581,7 @@
     } else fail('Choose where the removed card goes.');
   }
   H.eightTable = (s, a) => {
-    req(s, a, ['TURN_DRAW', 'MANDATORY_PLAY']);
+    req(s, a, ['MANDATORY_PLAY']); // SP-05
     const p = a.player, e = inHand(s, p, a.eightId);
     if (!isEight(e) || !specialActive(e)) fail('You need an unused 8.');
     const t = s.cards[a.targetId];
@@ -630,12 +591,14 @@
     t.groupId = null; t.logical = null;
     g.members[idx] = e.id;
     e.zone = 'group'; e.groupId = g.id; e.logical = L; e.subst = true; e.owner = p; e.special = 'consumed';
+    const wasSubstitute = t.subst;
     t.zone = 'transient'; t.subst = false; t.owner = null; t.faceDown = false;
-    applyPlacement(s, p, t.id, a.placement, g.id);
-    logp(s, `${nm(s, p)} plays an 8 to swap out ${t.joker ? 'a joker' : cardName(t)} from ${groupLabel(s, g)}.`);
+    if (wasSubstitute) exhaust(s, t.id); // 8-SUB-05 / SP-INT-10: the old substitute 8 leaves play; there is no card to re-place
+    else applyPlacement(s, p, t.id, a.placement, g.id);
+    logp(s, `${nm(s, p)} plays an 8 to swap out ${wasSubstitute ? 'a substitute 8' : t.joker ? 'a joker' : cardName(t)} from ${groupLabel(s, g)}.`);
   };
   H.eightDiscard = (s, a) => {
-    req(s, a, ['TURN_DRAW', 'MANDATORY_PLAY']);
+    req(s, a, ['MANDATORY_PLAY']); // SP-05
     const p = a.player, e = inHand(s, p, a.eightId);
     if (!isEight(e) || !specialActive(e)) fail('You need an unused 8.');
     const sel = s.discard[a.index];
@@ -668,10 +631,6 @@
     return creationSpecs(s, p, ids, opts.checkEmpty !== false).map(describeSpec);
   }
   function addChoices(s, cardId, groupId) { return addOptions(s, cardId, s.groups[groupId]); }
-  function mergeChoices(s, p, targetId) {
-    const t = s.groups[targetId];
-    return Object.values(s.groups).filter((g) => g.side === p && mergeCheck(s, t, g)).map((g) => g.id);
-  }
   function eightPlacements(s, p, eightId, target) { // target: {table: cardId} | {discard: index}
     const s2 = clone(s);
     let fid, sameGroup = null;
@@ -684,6 +643,7 @@
         const g = s2.groups[t.groupId], idx = g.members.indexOf(t.id), L = clone(t.logical);
         t.groupId = null; t.logical = null; g.members[idx] = e.id;
         e.zone = 'group'; e.groupId = g.id; e.logical = L; e.subst = true; e.owner = p; e.special = 'consumed';
+        if (t.subst) return [{ placement: { kind: 'exhaust' }, label: 'Swap in (the old substitute 8 leaves play)' }];
         t.zone = 'transient'; t.subst = false; fid = t.id; sameGroup = g.id;
       } else {
         fid = s2.discard[target.discard];
@@ -746,7 +706,7 @@
     SUITS, SUIT_SYM, SUIT_NAME, rl, isRed, cardName, lname, cardValue,
     newGame, act, actor, fixture, clone,
     computeScores, matchStatus, mandatoryPlays, placeable,
-    createOptions, addChoices, mergeChoices, eightPlacements, eightTargetCards, specialsFor, red2Targets,
+    createOptions, addChoices, eightPlacements, eightTargetCards, specialsFor, red2Targets,
     groupLabel, specLabel, isRed2, isBlack2, isEight, specialActive, classify, inferSpecs,
   };
 });

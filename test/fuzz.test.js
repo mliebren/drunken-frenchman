@@ -27,9 +27,7 @@ for (let seed = 1; seed <= 300; seed++) {
       if (sp.black2.length && rand(2)) run({ type: 'blackSeven', player: p, cardId: sp.black2[0] }); else run({ type: 'goingOutPass', player: p }); continue;
     }
     if (s.phase === 'TURN_DRAW') {
-      const sp = DF.specialsFor(s, p), r = rand(12);
-      if (r === 0 && sp.red2.length) { const t = DF.red2Targets(s, p); if (t.length) { run({ type: 'red2', player: p, cardId: sp.red2[0], targetId: t[0], mergeIntoId: DF.mergeChoices(s, p, t[0])[0] }); continue; } }
-      if (r === 1 && sp.black2.length) { run({ type: 'blackSeven', player: p, cardId: sp.black2[0] }); continue; }
+      const r = rand(12);
       if (r === 2 && s.discard.length && run({ type: 'pickupIndexed', player: p, index: rand(s.discard.length) })) continue;
       if (r === 3 && s.discard.length && run({ type: 'takeDiscardTop', player: p })) continue;
       if (!run({ type: 'drawPile', player: p }) && !run({ type: 'takeDiscardTop', player: p })) run({ type: 'blindDraw', player: p });
@@ -37,6 +35,8 @@ for (let seed = 1; seed <= 300; seed++) {
     }
     if (s.phase === 'MANDATORY_PLAY') {
       const sp = DF.specialsFor(s, p);
+      if (rand(14) === 0 && sp.red2.length) { const t = DF.red2Targets(s, p); if (t.length && run({ type: 'red2', player: p, cardId: sp.red2[0], targetId: t[0] })) continue; }
+      if (rand(14) === 1 && sp.black2.length && run({ type: 'blackSeven', player: p, cardId: sp.black2[0] })) continue;
       if (rand(10) === 0 && sp.eights.length && s.discard.length) {
         const idx = rand(s.discard.length), o = DF.eightPlacements(s, p, sp.eights[0], { discard: idx });
         if (o.length && run({ type: 'eightDiscard', player: p, eightId: sp.eights[0], index: idx, placement: o[0].placement })) continue;

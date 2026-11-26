@@ -106,8 +106,7 @@
       const targets = DF.red2Targets(s, p)
         .map((id) => ({ id, pts: groupPointsAgainst(s, s.groups[id], opp) })).sort((a, b) => b.pts - a.pts);
       if (targets.length && targets[0].pts >= 25) {
-        const merges = DF.mergeChoices(s, p, targets[0].id);
-        return { type: 'red2', cardId: sp.red2[0], targetId: targets[0].id, mergeIntoId: merges[0] || null };
+        return { type: 'red2', cardId: sp.red2[0], targetId: targets[0].id };
       }
     }
     // Black 2: make the opponent draw seven when they are close to going out (keep one black 2 to counter otherwise)
@@ -177,15 +176,21 @@
       return { c, v };
     }).sort((a, b) => b.v - a.v).map((x) => ({ type: 'discard', cardId: x.c.id }));
   }
+  // With the draw pile empty a forced take-then-discard of the same card can repeat forever.
+  // If the card just taken is also the worst card, discard the next-worst so the cards keep circulating.
+  function planDiscardAvoidingLoop(s, p) {
+    const list = planDiscard(s, p);
+    if (s.draw.length === 0 && list.length > 1 && list[0].cardId === s.lastTaken) list.push(list.shift());
+    return list;
+  }
 
   /* ---------------------------------------------------------------- windows */
+  // A red 2 was played against the bot: counter it with a black 2 when the stolen group is worth it (R2-05 / R2-07).
   function planChain(s, p) {
-    const sp = DF.specialsFor(s, p), out = [];
-    sp.black2.forEach((id) => out.push({ type: 'counter', cardId: id }));
-    if (sp.red2.length) {
-      const t = DF.red2Targets(s, p).map((id) => ({ id, pts: groupPointsAgainst(s, s.groups[id], 1 - p) })).sort((a, b) => b.pts - a.pts)[0];
-      if (t && t.pts >= 20) out.push({ type: 'red2', cardId: sp.red2[0], targetId: t.id, mergeIntoId: null });
-    }
+    const sp = DF.specialsFor(s, p), g = s.groups[s.chain.targetId];
+    const worth = g && groupPointsAgainst(s, g, p) >= 15;
+    const out = [];
+    if (worth || sp.black2.length >= 2) sp.black2.forEach((id) => out.push({ type: 'counter', cardId: id }));
     out.push({ type: 'passChain' });
     return out;
   }
@@ -200,10 +205,10 @@
     switch (s.phase) {
       case 'OPENING_BET': return planBet(s, p);
       case 'OPENING_SELECTION': return planSelection(s, p);
-      case 'TURN_DRAW': { const sp = planSpecial(s, p); return [...(sp ? [sp] : []), ...planDraw(s, p)]; }
+      case 'TURN_DRAW': return planDraw(s, p); // SP-05: special actions only after the draw
       case 'MANDATORY_PLAY': {
         const sp = planSpecial(s, p);
-        return [...(sp ? [sp] : []), ...planPlay(s, p), ...planDiscard(s, p)];
+        return [...(sp ? [sp] : []), ...planPlay(s, p), ...planDiscardAvoidingLoop(s, p)];
       }
       case 'RED2_RESPONSE_CHAIN': return planChain(s, p);
       case 'GOING_OUT_RESPONSE': return planGoingOut(s, p);

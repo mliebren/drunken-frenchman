@@ -36,11 +36,13 @@ catalogue plus a 300-game random-play fuzz that checks every card is always in e
 - `public/app.js`, `style.css`, `index.html` — UI
 - `server.js` / `serve.py` — local servers
 
-## Interpretation choices (where the spec was silent or inconsistent)
-- **Match target:** §17 says both 1000 and 200; I used **200** (matches §21 and the DF-MATCH tests). It is editable on the setup screen.
-- **Out-of-turn 2s:** red-2 responses/counters and the going-out black 2 are real response windows. Otherwise a player may play a 2 at the very start of their own turn (before drawing), which is equivalent in hot-seat play.
-- **Going-out + black 2:** draw-seven takes the discard pile top-down, so the face-down going-out card is the first card the going-out player draws back (per §15 / DF-END-09).
-- **Stalemate rule (added):** if the draw pile is empty and no card is played for six rounds, the game ends as a tie, because the spec otherwise allows two players to trade the same discard forever.
+## Interpretation choices (where the spec was silent, inconsistent, or you directed otherwise)
+See `DEVELOPMENT_NOTES.md` for the full rule-by-rule audit. In short:
+- **Special actions** (red 2, black 2 draw-seven, 8) are legal only after your draw and before your discard (SP-05). Outside your own turn, a black 2 can only be played in the red-2 counter window or the going-out window.
+- **Red 2:** groups never merge (R2-04); only a black 2 can answer a red 2 (R2-06); a counter just sends the group back (R2-07).
+- **Replacing a substitute 8** sends the old 8 to the exhausted pile (8-SUB-05).
+- **Match target:** the spec's own text is 200 (the 1000 in §17 is a leftover); editable on the setup screen.
+- **Going out:** by playing your last card (it goes face-down) or, per your ruling, by discarding your last card (face-down). Only a black 2 may answer; the black-2 player's victim then resumes as next active player (§10.8).
+- **Jokers, 2s and 8s are never forced** into a group by the mandatory-play loop (your ruling). A card picked up from deep in the discard pile must still be placed.
+- **Stalemate tie** is an optional house rule on the setup screen, **off by default**, because the spec's game-end list (§13) has no such rule.
 - **Two jokers as opening bets:** Joker-1 beats Joker-2 (deterministic tie-break).
-- **Discarding your last card** (not by going out) just ends the turn; only emptying by group play is "going out".
-- **Identity rule:** a given rank+suit identity may appear once among sets and once among runs, so a removed card from an 8-swap normally lands in the opposite group type.
