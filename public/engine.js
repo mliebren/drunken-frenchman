@@ -208,7 +208,15 @@
       if (hi + 1 <= 14) cand.push(hi + 1);
       cand.forEach((r) => { if (c.joker || (c.suit === suit && c.rank === r)) opts.push({ rank: r, suit }); });
     }
-    return opts.filter((o) => !identityConflict(s, g.type, o.rank, o.suit));
+    const valid = opts.filter((o) => !identityConflict(s, g.type, o.rank, o.suit));
+
+    // A joker completing a two-card set has no meaningful suit choice.
+    // Use the first valid canonical identity instead of presenting a modal.
+    if (g.type === 'set' && c.joker && mem.length === 2) {
+      return valid.slice(0, 1);
+    }
+
+    return valid;
   }
   function putInGroup(s, p, id, g, logical) {
     const c = s.cards[id];
