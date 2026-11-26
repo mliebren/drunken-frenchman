@@ -93,11 +93,20 @@
   }
   function openModal(title, body, actions) { ui.modal = { title, body, actions }; render(); }
   const closeModal = () => { ui.modal = null; render(); };
-  function chooseModal(title, intro, options) { // options: [{html, fn}]
-    ui.modal = { title, body: `<p>${intro}</p><div class="opts">${options.map((o, i) => `<button type="button" class="optbtn" data-act="modalopt" data-i="${i}">${o.html}</button>`).join('')}</div>`,
-      actions: [{ label: 'Cancel', ghost: true, fn: closeModal }], options };
-    render();
-  }
+  function chooseModal(title, intro, options) {
+  ui.modal = {
+    title,
+    body: `<p>${intro}</p><div class="opts">${options.map((o, i) =>
+      `<div class="optrow">
+        <div class="optinfo">${o.html}</div>
+        <button type="button" class="btn small" data-act="modalopt" data-i="${i}">Choose</button>
+      </div>`
+    ).join('')}</div>`,
+    actions: [{ label: 'Cancel', ghost: true, fn: closeModal }],
+    options
+  };
+  render();
+}
 
   /* ------------------------------------------------------------ screens */
   function setupScreen() {
