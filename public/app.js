@@ -173,25 +173,36 @@
   const backsHTML = (n) => `<div class="backs">${Array.from({ length: Math.min(n, 12) }, () => cardHTML(null, { back: true, size: 'xs' })).join('')}</div>`;
 
   /* ---- table ---- */
-  function groupHTML(g) {
-    const m = me(), cardsAttr = (id) => `data-act="gcard" data-id="${id}" data-g="${g.id}"`;
-    let can = false;
-    if (ui.mode && ui.mode.kind === 'red2') can = DF.red2Targets(G, m).includes(g.id);
-    else if (!ui.mode && ui.sel.length === 1 && G.phase === 'MANDATORY_PLAY') can = DF.addChoices(G, ui.sel[0], g.id).length > 0;
-    const hint = ui.hint && ui.hint.groupId === g.id;
-    return `<div class="grp ${can ? 'can' : ''} ${hint ? 'hint' : ''}" data-act="group" data-g="${g.id}">
-      <div class="gl">${esc(DF.groupLabel(G, g))}${can && !ui.mode ? ' — click to add' : ''}${can && ui.mode ? ' — click to take' : ''}</div>
-      <div class="cs">${g.members.map((id) => cardHTML(G.cards[id], { size: 'sm', attr: cardsAttr(id) })).join('')}</div></div>`;
-  }
-  function sideHTML(p, mineSide) {
-    const sc = DF.computeScores(G), gs = Object.values(G.groups).filter((g) => g.side === p);
-    const over = !!G.result;
-    return `<section class="side"><div class="sidehead"><span class="who">${nm(p)}${mineSide && !ui.vsBot ? ' (you)' : ''}</span>
-      <span class="chip">${G.hands[p].length} in hand</span><span class="chip">${sc.table[p]} on table</span>
-      ${!mineSide && !over ? backsHTML(G.hands[p].length) : ''}
-      ${over ? `<span class="hint">hand: ${G.hands[p].map((id) => DF.cardName(G.cards[id])).join(' ') || 'empty'}</span>` : ''}</div>
-      <div class="groups">${gs.length ? gs.map(groupHTML).join('') : '<span class="empty">No groups on this side yet.</span>'}</div></section>`;
-  }
+  function groupHTML(g, ownerFilter = null) {
+  const m = me(), cardsAttr = (id) => `data-act="gcard" data-id="${id}" data-g="${g.id}`;
+  let can = false;
+  if (ui.mode && ui.mode.kind === 'red2') can = DF.red2Targets(G, m).includes(g.id);
+  else if (!ui.mode && ui.sel.length === 1 && G.phase === 'MANDATORY_PLAY') can = DF.addChoices(G, ui.sel[0], g.id).length > 0;
+  const hint = ui.hint && ui.hint.groupId === g.id;
+
+  const members = ownerFilter === null
+    ? g.members
+    : g.members.filter((id) => G.cards[id].owner === ownerFilter);
+
+  if (!members.length) return '';
+
+  return `<div class="grp ${can ? 'can' : ''} ${hint ? 'hint' : ''}" data-act="group" data-g="${g.id}">
+    <div class="gl">${esc(DF.groupLabel(G, g))}${can && !ui.mode ? ' — click to add' : ''}${can && ui.mode ? ' — click to take' : ''}</div>
+    <div class="cs">${members.map((id) => cardHTML(G.cards[id], { size: 'sm', attr: cardsAttr(id) })).join('')}</div></div>`;
+}
+function sideHTML(p, mineSide) {
+  const sc = DF.computeScores(G);
+  const gs = Object.values(G.groups).filter((g) =>
+    g.members.some((id) => G.cards[id].owner === p)
+  );
+  const over = !!G.result;
+
+  return `<section class="side"><div class="sidehead"><span class="who">${nm(p)}${mineSide && !ui.vsBot ? ' (you)' : ''}</span>
+    <span class="chip">${G.hands[p].length} in hand</span><span class="chip">${sc.table[p]} on table</span>
+    ${!mineSide && !over ? backsHTML(G.hands[p].length) : ''}
+    ${over ? `<span class="hint">hand: ${G.hands[p].map((id) => DF.cardName(G.cards[id])).join(' ') || 'empty'}</span>` : ''}</div>
+    <div class="groups">${gs.length ? gs.map((g) => groupHTML(g, p)).join('') : '<span class="empty">No groups on this side yet.</span>'}</div></section>`;
+}
   function pilesHTML() {
     const turn = G.phase === 'TURN_DRAW' && DF.actor(G) === me();
     const canDraw = turn && G.draw.length > 0;
