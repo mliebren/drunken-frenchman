@@ -380,6 +380,14 @@ button {
   box-shadow: 0 0 0 2px var(--brass-soft), 0 1px 3px rgba(0, 0, 0, .45);
 }
 
+.hand .card.drawn:not(.sel) {
+  box-shadow:
+    0 0 0 2px rgba(201, 162, 75, .75),
+    0 0 10px rgba(201, 162, 75, .25);
+  position: relative;
+  z-index: 3;
+}
+
 .sorter {
   display: flex;
   flex-direction: column;

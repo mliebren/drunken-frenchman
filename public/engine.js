@@ -415,13 +415,17 @@
     logp(s, `${nm(s, w)} takes their opening card and starts the first turn.`);
   };
 
-  H.drawPile = (s, a) => {
-    req(s, a, ['TURN_DRAW']);
-    if (!s.draw.length) fail('The draw pile is empty.');
-    toHand(s, a.player, s.draw[0]);
-    s.drawn = true; s.phase = 'MANDATORY_PLAY';
-    logp(s, `${nm(s, a.player)} draws from the pile.`);
-  };
+H.drawPile = (s, a) => {
+  req(s, a, ['TURN_DRAW']);
+  if (!s.draw.length) fail('The draw pile is empty.');
+  const id = s.draw[0];
+  const c = s.cards[id];
+  toHand(s, a.player, id);
+  s.lastTaken = id;
+  s.drawn = true;
+  s.phase = 'MANDATORY_PLAY';
+  logp(s, `${nm(s, a.player)} draws ${cardName(c)} from the pile.`);
+};
   H.takeDiscardTop = (s, a) => {
     req(s, a, ['TURN_DRAW']);
     if (!s.discard.length) fail('The discard pile is empty.');

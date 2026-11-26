@@ -173,9 +173,19 @@
     const ids = sortHand(G.hands[p]);
     const must = ui.hint ? new Set(ui.hint.ids) : new Set();
     const firstSpecial = ids.findIndex((id) => isSpecialCard(G.cards[id]));
-    const cards = ids.map((id, i) => (i === firstSpecial && i > 0 ? '<span class="hdiv" title="Special cards: jokers, 2s and 8s"></span>' : '') + cardHTML(G.cards[id], {
-      size: 'lg', cls: (ui.sel.includes(id) ? 'sel ' : '') + (must.has(id) ? 'must' : ''), attr: `data-act="hand" data-id="${id}"`,
-    })).join('');
+    const cards = ids.map((id, i) =>
+  (i === firstSpecial && i > 0
+    ? '<span class="hdiv" title="Special cards: jokers, 2s and 8s"></span>'
+    : '') +
+  cardHTML(G.cards[id], {
+    size: 'lg',
+    cls:
+      (ui.sel.includes(id) ? 'sel ' : '') +
+      (must.has(id) ? 'must ' : '') +
+      (G.lastTaken === id ? 'drawn ' : ''),
+    attr: `data-act="hand" data-id="${id}"`,
+  })
+).join('');
     return `<div class="handwrap"><div class="hand">${cards}</div>
       <div class="sorter"><span class="hint">${G.hands[p].length} card${G.hands[p].length === 1 ? '' : 's'}</span>${firstSpecial >= 0 ? '<span class="hint">Specials on the right</span>' : ''}</div></div>`;
   }
