@@ -626,9 +626,26 @@
   }
 
   /* ------------------------------------------------------------------ queries for the UI */
-  function describeSpec(sp) { return { spec: sp, label: specLabel(sp) }; }
+  // The same group can be reachable through different physical cards (a joker standing in for a real card,
+  // or the two jokers swapping roles). Players should see each distinct group once, always in the same order.
+  const SUIT_POS = { S: 0, H: 1, D: 2, C: 3 };
+  function canonSpec(sp) { // sets are listed in suit order (♠ ♥ ♦ ♣); runs are already in rank order
+    if (sp.type !== 'set') return sp;
+    return { type: sp.type, members: sp.members.slice().sort((a, b) => SUIT_POS[a.suit] - SUIT_POS[b.suit]) };
+  }
+  const specKey = (sp) => sp.type + ':' + sp.members.map((m) => m.rank + m.suit).sort().join(',');
+  function uniqueSpecOptions(s, options) { // options: [{spec, ...}]; keeps the first position of each group
+    const best = new Map();
+    for (const o of options) {
+      const key = specKey(o.spec), jokers = o.spec.members.filter((m) => s.cards[m.id].joker).length;
+      const cur = best.get(key);
+      if (!cur || jokers < cur.jokers) best.set(key, { o, jokers }); // prefer the version that keeps jokers in hand
+    }
+    return [...best.values()].map((x) => x.o);
+  }
+  function describeSpec(sp) { const c = canonSpec(sp); return { spec: c, label: specLabel(c) }; }
   function createOptions(s, p, ids, opts = {}) {
-    return creationSpecs(s, p, ids, opts.checkEmpty !== false).map(describeSpec);
+    return uniqueSpecOptions(s, creationSpecs(s, p, ids, opts.checkEmpty !== false).map(describeSpec));
   }
   function addChoices(s, cardId, groupId) { return addOptions(s, cardId, s.groups[groupId]); }
   function eightPlacements(s, p, eightId, target) { // target: {table: cardId} | {discard: index}
@@ -657,10 +674,14 @@
       if (sameGroup === g.id && !(g.type === 'set' && g.members.length === 3)) continue;
       for (const o of addOptions(s2, fid, g)) out.push({ placement: { kind: 'add', groupId: g.id, logical: o }, label: 'Add to ' + groupLabel(s2, g) + (s2.cards[fid].joker ? ' as ' + lname(o) : ''), groupId: g.id });
     }
-    const hand = s2.hands[p];
+    const hand = s2.hands[p], created = [];
     for (let i = 0; i < hand.length - 1; i++) for (let j = i + 1; j < hand.length; j++) {
-      creationSpecs(s2, p, [fid, hand[i], hand[j]], false).forEach((sp) => out.push({ placement: { kind: 'create', specs: sp.members }, label: 'New ' + specLabel(sp), spec: sp }));
+      creationSpecs(s2, p, [fid, hand[i], hand[j]], false).forEach((sp) => {
+        const c = canonSpec(sp);
+        created.push({ placement: { kind: 'create', specs: c.members }, label: 'New ' + specLabel(c), spec: c });
+      });
     }
+    uniqueSpecOptions(s2, created).forEach((o) => out.push(o));
     return out;
   }
   function eightTargetCards(s) { return Object.values(s.cards).filter((c) => c.zone === 'group').map((c) => c.id); }

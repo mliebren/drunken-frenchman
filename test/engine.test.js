@@ -318,5 +318,27 @@ t('Stalemate tie is an opt-in house rule (off by default)', () => {
   }
 });
 
+t('Joker choices list each distinct group once, in a fixed order', () => {
+  const key = (sp) => sp.type + ':' + sp.members.map((m) => m.rank + m.suit).sort().join(',');
+  const noDupes = (opts, what) => { const keys = opts.filter((o) => o.spec).map((o) => key(o.spec)); eq(new Set(keys).size, keys.length, what + ' has repeated groups'); const labels = opts.map((o) => o.label); eq(new Set(labels).size, labels.length, what + ' has repeated labels'); };
+  // creating a group: two jokers in hand
+  for (const sel of [['5H', 'JK1', 'JK2'], ['5H', '6H', 'JK1', 'JK2'], ['5H', '5D', 'JK1', 'JK2']]) noDupes(DF.createOptions(play([[...sel, '9S'], ['3C']]), 0, sel, { checkEmpty: false }), 'create ' + sel);
+  // 8 swap: removed joker + a joker in hand + real cards that could stand in for it
+  const base = [{ id: 'G1', type: 'set', side: 1, members: ['5D', '5C', 'JK1=5H'] }];
+  for (const hand of [['8C', 'JK2', '9S', '9D'], ['8C', '7H', '6H', 'JK2'], ['8C', 'JK2', '4S', '3S']]) {
+    const opts = DF.eightPlacements(play([hand, ['3C']], base), 0, '8C', { table: 'JK1' });
+    noDupes(opts, 'swap ' + hand);
+  }
+  // sets are always listed in suit order, whichever cards make them
+  const sets = DF.eightPlacements(play([['8C', 'JK2', '9S', '9D'], ['3C']], base), 0, '8C', { table: 'JK1' }).filter((o) => o.spec && o.spec.type === 'set');
+  yes(sets.length > 0 && sets.every((o) => /^New Set of 9s \(♠?♥?♦?♣?\)$/.test(o.label)), 'suit order ♠♥♦♣: ' + sets.map((o) => o.label));
+  // the version that keeps the joker in hand is the one offered, and it is still playable
+  const st = play([['8C', '7H', '6H', 'JK2'], ['3C']], base);
+  const run = DF.eightPlacements(st, 0, '8C', { table: 'JK1' }).filter((o) => o.label === 'New Run ♥ 5-6-7');
+  eq(run.length, 1); eq(run[0].spec.members.some((m) => m.id === 'JK2'), false, 'real cards used, JK2 kept');
+  const s = good(A(st, { type: 'eightTable', player: 0, eightId: '8C', targetId: 'JK1', placement: run[0].placement }));
+  eq(s.hands[0], ['JK2']);
+});
+
 console.log(`\n${pass} passed, ${failN} failed`);
 process.exit(failN ? 1 : 0);
